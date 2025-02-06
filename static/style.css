@@ -1,0 +1,85 @@
+/* Global Styles */
+body {
+    /* A soft blue gradient background covering the entire page */
+    background: linear-gradient(135deg, #cce5ff, #e2f0ff);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #343a40;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* Navigation Bar */
+  .navbar {
+    margin-bottom: 20px;
+  }
+  
+  /* Navbar Brand and Links */
+  .navbar-brand,
+  .nav-link {
+    font-weight: 500;
+    color: #ffffff !important;
+  }
+  
+  /* Card Components */
+  .card {
+    border: none;
+    border-radius: 15px;
+    background-color: #ffffff;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    margin-bottom: 30px;
+    padding: 20px;
+  }
+  
+  /* Headings and Text */
+  h1, h2, h3, h4, h5, h6 {
+    color: #343a40;
+    margin-bottom: 15px;
+  }
+  
+  /* Paragraphs */
+  p {
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+  
+  /* Container Spacing */
+  .container {
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+  
+  /* Predict Button Customization */
+  .btn-success {
+    background-color: #28a745;
+    border-color: #28a745;
+    transition: background-color 0.3s ease;
+  }
+  
+  .btn-success:hover {
+    background-color: #218838;
+    border-color: #1e7e34;
+  }
+  
+  /* Alert Message Styling (for flashed messages) */
+  .alert {
+    margin-top: 20px;
+  }
+  
+  /* Responsive Map Container */
+  .map-responsive {
+    overflow: hidden;
+    padding-bottom: 56.25%; /* 16:9 aspect ratio */
+    position: relative;
+    height: 0;
+    margin-bottom: 20px;
+  }
+  
+  .map-responsive iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+  

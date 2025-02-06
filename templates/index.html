@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Home - Stock Predictor{% endblock %}
+{% block content %}
+<div class="card shadow-lg p-4">
+  <h1 class="mb-4 text-center">Welcome to Stock Predictor</h1>
+  <p class="mb-4 text-center">Select a stock from the list below and click "Predict" to see the prediction.</p>
+  
+  <!-- Stock Prediction Form -->
+  <form action="{{ url_for('predict') }}" method="post">
+    <div class="mb-3">
+      <label for="stockSelect" class="form-label">Select Stock</label>
+      <select class="form-select" id="stockSelect" name="stock" required>
+        <option value="" selected disabled>Choose a stock</option>
+        <option value="AAPL">Apple Inc. (AAPL)</option>
+        <option value="GOOGL">Alphabet Inc. (GOOGL)</option>
+        <option value="AMZN">Amazon.com Inc. (AMZN)</option>
+        <option value="MSFT">Microsoft Corp. (MSFT)</option>
+      </select>
+    </div>
+    <div class="d-grid">
+      <button type="submit" class="btn btn-success btn-lg">Predict</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
