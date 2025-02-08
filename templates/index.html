@@ -3,9 +3,11 @@
 {% block content %}
 <div class="card shadow-lg p-4">
   <h1 class="mb-4 text-center">Welcome to Stock Predictor</h1>
-  <p class="mb-4 text-center">Select a stock from the list below and click "Confirm" to load the stock data via the API.</p>
+  <p class="mb-4 text-center">
+    Select a stock from the list below and click "Confirm" to load the stock data via the API.
+  </p>
   
-  <!-- Form with an id so we can intercept actions using JavaScript -->
+  <!-- Form with an id for JavaScript handling -->
   <form id="stockForm">
     <div class="mb-3">
       <label for="stockSelect" class="form-label">Select Stock</label>
@@ -16,6 +18,7 @@
           <option value="GOOGL">Alphabet Inc. (GOOGL)</option>
           <option value="AMZN">Amazon.com Inc. (AMZN)</option>
           <option value="MSFT">Microsoft Corp. (MSFT)</option>
+          <option value="^GSPC">S&amp;P 500 (^GSPC)</option>
         </select>
         <!-- New Confirm Button to trigger the API call -->
         <button type="button" id="confirmBtn" class="btn btn-secondary">Confirm</button>
