@@ -4,11 +4,11 @@
 <div class="card shadow-lg p-4">
   <h1 class="mb-4 text-center">Welcome to Stock Predictor</h1>
   <p class="mb-4 text-center">
-    Select a stock from the list below and click "Confirm" to load the stock data via the API.
+    Select a stock from the list below and click "Predict" to download, preprocess, and predict the next 2 days' close prices.
   </p>
   
-  <!-- Form with an id for JavaScript handling -->
-  <form id="stockForm">
+  <!-- Form that submits to the /predict endpoint -->
+  <form id="stockForm" method="POST" action="{{ url_for('predict_endpoint') }}">
     <div class="mb-3">
       <label for="stockSelect" class="form-label">Select Stock</label>
       <div class="input-group">
@@ -20,11 +20,9 @@
           <option value="MSFT">Microsoft Corp. (MSFT)</option>
           <option value="^GSPC">S&amp;P 500 (^GSPC)</option>
         </select>
-        <!-- New Confirm Button to trigger the API call -->
-        <button type="button" id="confirmBtn" class="btn btn-secondary">Confirm</button>
       </div>
     </div>
-    <!-- Optional Predict button that submits the form normally -->
+    <!-- Predict Button that submits the form -->
     <div class="d-grid">
       <button type="submit" class="btn btn-success btn-lg">Predict</button>
     </div>

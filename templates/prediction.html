@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Predictions for {{ stock }}{% endblock %}
+{% block content %}
+<div class="card shadow-lg p-4">
+  <h1 class="mb-4 text-center">Predictions for {{ stock }}</h1>
+  <p class="mb-4 text-center">Predicted Close Prices for the Next 2 Days:</p>
+  <ul>
+    {% for price in predictions %}
+      <li>{{ price }}</li>
+    {% endfor %}
+  </ul>
+  <a href="{{ url_for('index') }}" class="btn btn-primary">Go Back</a>
+</div>
+{% endblock %}

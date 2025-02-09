@@ -1,10 +1,9 @@
-app.py:
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 import yfinance as yf
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import RobustScaler, MinMaxScaler
-import matplotlib.pyplot as plt  # Imported in case you need it later
+import tensorflow as tf  # For loading the GRU model
 import seaborn as sns
 from datetime import datetime
 
@@ -13,58 +12,59 @@ sns.set_style("whitegrid")
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Replace with a strong secret key
 
+# Global dictionary to cache downloaded and preprocessed data by stock symbol.
+cached_data = {}
+
 def preprocess_data(df):
     """
     Preprocesses the DataFrame:
-    - Uses the last 15% of the data.
-    - Converts 'Date' to datetime and numeric columns.
-    - Sets the Date as the index and sorts it.
-    - Performs feature engineering.
-    - Scales selected features.
-    - Splits the data and prints the shapes.
-    Instead of plotting, it prints a confirmation message.
+      - Uses the last 15% of the data.
+      - Converts 'Date' to datetime and numeric columns.
+      - Sets the Date as the index and sorts it.
+      - Performs feature engineering.
+      - Scales selected features.
+      - Splits the data and prints the shapes.
+    Instead of plotting, it prints confirmation messages.
     """
     n = len(df)
-    df = df.iloc[int(0.85 * n):]
-    # df['Date'] = pd.to_datetime(df['Date'])
+    df = df.iloc[int(0.85 * n):].copy()  # Explicit copy to avoid warnings
     df.loc[:, 'Date'] = pd.to_datetime(df['Date'])
-
     
     # Convert numeric columns
     numeric_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
     for col in numeric_columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+        df.loc[:, col] = pd.to_numeric(df[col], errors='coerce')
     
     # Set Date as index and sort
     df.set_index('Date', inplace=True)
     df.sort_index(inplace=True)
     
     # Feature Engineering
-    df['Returns'] = df['Close'].pct_change()
-    df['Log_Returns'] = np.log(df['Close'] / df['Close'].shift(1))
-    df['MA5'] = df['Close'].rolling(window=5).mean()
-    df['MA20'] = df['Close'].rolling(window=20).mean()
-    df['MA50'] = df['Close'].rolling(window=50).mean()
-    df['Daily_Range'] = df['High'] - df['Low']
-    df['Volatility'] = df['Returns'].rolling(window=20).std()
-    df['Volume_MA5'] = df['Volume'].rolling(window=5).mean()
-    df['Volume_MA20'] = df['Volume'].rolling(window=20).mean()
+    df.loc[:, 'Returns'] = df['Close'].pct_change()
+    df.loc[:, 'Log_Returns'] = np.log(df['Close'] / df['Close'].shift(1))
+    df.loc[:, 'MA5'] = df['Close'].rolling(window=5).mean()
+    df.loc[:, 'MA20'] = df['Close'].rolling(window=20).mean()
+    df.loc[:, 'MA50'] = df['Close'].rolling(window=50).mean()
+    df.loc[:, 'Daily_Range'] = df['High'] - df['Low']
+    df.loc[:, 'Volatility'] = df['Returns'].rolling(window=20).std()
+    df.loc[:, 'Volume_MA5'] = df['Volume'].rolling(window=5).mean()
+    df.loc[:, 'Volume_MA20'] = df['Volume'].rolling(window=20).mean()
 
     # RSI Calculation
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
+    df.loc[:, 'RSI'] = 100 - (100 / (1 + rs))
 
     # MACD Calculation
     exp1 = df['Close'].ewm(span=12, adjust=False).mean()
     exp2 = df['Close'].ewm(span=26, adjust=False).mean()
-    df['MACD'] = exp1 - exp2
-    df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
+    df.loc[:, 'MACD'] = exp1 - exp2
+    df.loc[:, 'Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
 
     # Price Momentum
-    df['Momentum'] = df['Close'] - df['Close'].shift(4)
+    df.loc[:, 'Momentum'] = df['Close'] - df['Close'].shift(4)
 
     # Drop NaN values
     df.dropna(inplace=True)
@@ -78,7 +78,7 @@ def preprocess_data(df):
     vol_features = ['Volume', 'Volume_MA5', 'Volume_MA20', 'Volatility']
     df_scaled[vol_features] = vol_scaler.fit_transform(df[vol_features])
 
-    # Split the data
+    # Split the data (for logging purposes)
     total_size = len(df)
     train_end = int(total_size * 0.7)
     val_end = int(total_size * 0.85)
@@ -107,50 +107,80 @@ def about():
 def contact():
     return render_template('contact.html')
 
+# --- Combined Prediction Endpoint ---
 @app.route('/predict', methods=['POST'])
-def predict():
+def predict_endpoint():
+    """
+    This endpoint performs the complete workflow:
+      - Downloads the data for the selected stock if not cached.
+      - Preprocesses the data and caches it.
+      - Prepares an input sequence from the raw 'Close' values.
+      - Loads the pre-trained GRU model.
+      - Predicts the next 2 days' close prices.
+      - Renders the predictions on a new page.
+    """
     selected_stock = request.form.get('stock')
-    if selected_stock:
-        flash(f"Prediction requested for stock: {selected_stock}")
-    else:
-        flash("Please select a stock to predict.")
-    return redirect(url_for('index'))
-
-# --- API Endpoint for Stock Data and Preprocessing ---
-@app.route('/api/stockdata', methods=['POST'])
-def stock_data():
-    request_data = request.get_json()
-    if not request_data or 'stock' not in request_data:
-        return jsonify({"error": "Missing 'stock' parameter"}), 400
-
-    stock_symbol = request_data['stock']
+    if not selected_stock:
+        flash("Please select a stock.")
+        return redirect(url_for('index'))
+    
     try:
-        # Download historical data from yfinance (max available period)
-        data = yf.download(stock_symbol, period="max")
-        print(f"Raw data for {stock_symbol}:")
-        print(data)
+        # Download and cache data if not already cached
+        if selected_stock not in cached_data:
+            data = yf.download(selected_stock, period="max")
+            print(f"Raw data for {selected_stock}:")
+            print(data)
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+            data.reset_index(inplace=True)
+            data = data[["Date", "Close", "High", "Low", "Open", "Volume"]]
+            data.columns = ["Date", "Close", "High", "Low", "Open", "Volume"]
+            print("Cleaned data:")
+            print(data)
+            print("Data head:")
+            print(data.head())
+            processed = preprocess_data(data)
+            cached_data[selected_stock] = {"raw": data, "preprocessed": processed}
+        else:
+            print(f"Using cached data for {selected_stock}")
+            data = cached_data[selected_stock]["raw"]
         
-        # Flatten header if needed and clean the data
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-        data.reset_index(inplace=True)
-        data = data[["Date", "Close", "High", "Low", "Open", "Volume"]]
-        data.columns = ["Date", "Close", "High", "Low", "Open", "Volume"]
+        # Prepare input using the raw 'Close' values
+        sequence_length = 50  # Must match training sequence length
+        recent_data = data['Close'].values
+        if len(recent_data) < sequence_length:
+            flash("Not enough data to form the prediction sequence.")
+            return redirect(url_for('index'))
         
-        print("Cleaned data:")
-        print(data)
+        # Compute scaling parameters (assuming MinMax scaling was used)
+        close_min = data['Close'].min()
+        close_max = data['Close'].max()
+        scaled_recent = (recent_data - close_min) / (close_max - close_min)
+        input_seq = scaled_recent[-sequence_length:].reshape(1, sequence_length, 1)
         
+        # Load the pre-trained GRU model (using custom_objects to resolve 'mse')
+        gru_model = tf.keras.models.load_model("models/gru_model.h5", 
+                                                custom_objects={'mse': tf.keras.losses.MeanSquaredError()})
+        
+        def predict_next_days(model, input_sequence, num_days):
+            predictions = []
+            current_sequence = input_sequence.copy()
+            for _ in range(num_days):
+                next_pred_scaled = model.predict(current_sequence)[0][0]
+                predictions.append(next_pred_scaled)
+                current_sequence = np.append(current_sequence[:, 1:, :], [[[next_pred_scaled]]], axis=1)
+            predictions_actual = [(p * (close_max - close_min)) + close_min for p in predictions]
+            return predictions_actual
 
+        future_predictions = predict_next_days(gru_model, input_seq, 2)
+        print("Predicted Close Prices for the Next 2 Days:", future_predictions)
         
-        # Automatically trigger preprocessing; this will print its own confirmation message
-        preprocess_data(data)
-        print("Data head after preprocessing:")
-        print(data.head())
-        
-        return jsonify({"message": f"Data for {stock_symbol} loaded, cleaned, and preprocessed successfully. Check console for output."}), 200
+        return render_template('prediction.html', predictions=future_predictions, stock=selected_stock)
+    
     except Exception as e:
-        print(f"Error loading data for {stock_symbol}: {e}")
-        return jsonify({"error": str(e)}), 500
+        print(f"Error in prediction for {selected_stock}: {e}")
+        flash(f"Error in prediction: {e}")
+        return redirect(url_for('index'))
 
 if __name__ == '__main__':
     app.run(debug=True)
