@@ -6,6 +6,13 @@ from sklearn.preprocessing import RobustScaler, MinMaxScaler
 import tensorflow as tf  # For loading the GRU model
 import seaborn as sns
 from datetime import datetime
+import io
+import base64
+
+# Use the 'Agg' backend for matplotlib to avoid Tkinter issues
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 sns.set_style("whitegrid")
 
@@ -24,10 +31,9 @@ def preprocess_data(df):
       - Performs feature engineering.
       - Scales selected features.
       - Splits the data and prints the shapes.
-    Instead of plotting, it prints confirmation messages.
     """
     n = len(df)
-    df = df.iloc[int(0.85 * n):].copy()  # Explicit copy to avoid warnings
+    df = df.iloc[int(0.85 * n):].copy()  
     df.loc[:, 'Date'] = pd.to_datetime(df['Date'])
     
     # Convert numeric columns
@@ -78,7 +84,7 @@ def preprocess_data(df):
     vol_features = ['Volume', 'Volume_MA5', 'Volume_MA20', 'Volatility']
     df_scaled[vol_features] = vol_scaler.fit_transform(df[vol_features])
 
-    # Split the data (for logging purposes)
+    # Log the sizes of splits
     total_size = len(df)
     train_end = int(total_size * 0.7)
     val_end = int(total_size * 0.85)
@@ -93,6 +99,18 @@ def preprocess_data(df):
     print("Test set shape:", test_data.shape)
     
     return df_scaled
+
+def get_next_trading_days(last_date, num_days):
+    """
+    Generates the next `num_days` trading days (skipping weekends).
+    """
+    future_dates = []
+    current_date = last_date
+    while len(future_dates) < num_days:
+        current_date += pd.Timedelta(days=1)
+        if current_date.weekday() < 5:  # Monday=0, Tuesday=1, ... Friday=4
+            future_dates.append(current_date)
+    return future_dates
 
 # --- Frontend Routes ---
 @app.route('/')
@@ -117,7 +135,11 @@ def predict_endpoint():
       - Prepares an input sequence from the raw 'Close' values.
       - Loads the pre-trained GRU model.
       - Predicts the next 2 days' close prices.
-      - Renders the predictions on a new page.
+      - Plots:
+          * Historical data in blue (with markers).
+          * A single red line (no markers) from the last historical point to the last predicted point.
+          * Exactly two red markers for the two predicted points.
+      - Renders the predictions, plot, and warning on a new page.
     """
     selected_stock = request.form.get('stock')
     if not selected_stock:
@@ -168,14 +190,70 @@ def predict_endpoint():
             for _ in range(num_days):
                 next_pred_scaled = model.predict(current_sequence)[0][0]
                 predictions.append(next_pred_scaled)
+                # Append new prediction and remove the oldest value
                 current_sequence = np.append(current_sequence[:, 1:, :], [[[next_pred_scaled]]], axis=1)
             predictions_actual = [(p * (close_max - close_min)) + close_min for p in predictions]
             return predictions_actual
 
+        # Make 2-day predictions
         future_predictions = predict_next_days(gru_model, input_seq, 2)
         print("Predicted Close Prices for the Next 2 Days:", future_predictions)
         
-        return render_template('prediction.html', predictions=future_predictions, stock=selected_stock)
+        # --- Generate the Plot ---
+        # Use the last 100 days for historical context (or fewer if not available)
+        historical_data = data.tail(100).copy()
+        historical_data['Date'] = pd.to_datetime(historical_data['Date'])
+        
+        # Generate future trading dates (skipping weekends)
+        last_date = historical_data['Date'].iloc[-1]
+        future_dates = get_next_trading_days(last_date, len(future_predictions))
+        
+        # Identify the last historical point for continuity
+        last_hist_date = historical_data['Date'].iloc[-1]
+        last_hist_close = historical_data['Close'].iloc[-1]
+        
+        # The two predicted points
+        pred_dates = future_dates
+        pred_values = future_predictions
+        
+        plt.figure(figsize=(10, 6))
+        
+        # 1. Plot historical data in blue (with markers)
+        plt.plot(historical_data['Date'], 
+                 historical_data['Close'], 
+                 label='Historical Close Price', 
+                 color='blue', 
+                 marker='o')
+        
+        # 2. Plot one red line from the last historical point to the last predicted date
+        #    with NO markers to avoid a red marker on the last historical point.
+        line_dates = [last_hist_date] + list(pred_dates)
+        line_values = [last_hist_close] + list(pred_values)
+        plt.plot(line_dates, line_values, color='red', label='Predicted Close Price', marker=None)
+        
+        # 3. Plot exactly TWO red markers for the two predicted points
+        plt.plot(pred_dates, pred_values, color='red', marker='o', linestyle='None')
+        
+        plt.xlabel("Date")
+        plt.ylabel("Close Price")
+        plt.title(f"Historical Close Prices and Predictions for {selected_stock}")
+        plt.legend()
+        
+        # Convert plot to PNG and then to base64
+        buf = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        image_png = buf.getvalue()
+        buf.close()
+        plot_url = base64.b64encode(image_png).decode('utf8')
+        plt.close()  # Close the figure to free memory
+
+        # Render template with predictions, plot, and warning message
+        return render_template('prediction.html', 
+                               predictions=future_predictions, 
+                               stock=selected_stock,
+                               plot_url=plot_url)
     
     except Exception as e:
         print(f"Error in prediction for {selected_stock}: {e}")

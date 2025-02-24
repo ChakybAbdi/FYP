@@ -1,8 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Predictions for {{ stock }}{% endblock %}
+
 {% block content %}
 <div class="card shadow-lg p-4">
   <h1 class="mb-4 text-center">Predictions for {{ stock }}</h1>
+  
+  <!-- Warning Message -->
+  <div class="alert alert-warning" role="alert">
+    <strong>Note:</strong> These predictions are estimates and may not be 100% accurate.
+  </div>
+  
+  <!-- Display the plot -->
+  <div class="text-center mb-4">
+    <img src="data:image/png;base64,{{ plot_url }}" class="img-fluid" alt="Historical and Predicted Prices">
+  </div>
+  
   <p class="mb-4 text-center">Predicted Close Prices for the Next 2 Days:</p>
   <ul>
     {% for price in predictions %}
